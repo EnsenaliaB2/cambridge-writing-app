@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+feedback.docx
+feedback.pdf
+writing_feedback.docx
+writing_feedback.pdf
