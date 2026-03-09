@@ -154,6 +154,70 @@ def save_task_image(uploaded_file) -> str:
     return path
 
 
+def word_count_check(text: str):
+    words = text.split()
+    count = len(words)
+
+    min_words = 140
+    max_words = 190
+
+    if count < min_words:
+        status = "Below recommended length"
+    elif count > max_words:
+        status = "Above recommended length"
+    else:
+        status = "Within recommended range"
+
+    return count, status, min_words, max_words
+
+
+def estimate_cefr(score: int) -> str:
+    if score >= 18:
+        return "Strong B2 / approaching C1"
+    elif score >= 15:
+        return "Solid B2"
+    elif score >= 12:
+        return "Borderline B2 (B1+)"
+    elif score >= 9:
+        return "B1"
+    else:
+        return "Below B1"
+
+
+def build_inline_corrections_html(text: str, corrections: list) -> str:
+    if not text:
+        return ""
+
+    html = text
+
+    for c in corrections:
+        if not isinstance(c, dict):
+            continue
+
+        error = str(c.get("error_fragment", "")).strip()
+        suggestion = str(c.get("suggestion", "")).strip()
+
+        if not error or error not in html:
+            continue
+
+        if suggestion:
+            replacement = (
+                f'<span style="text-decoration: underline; text-decoration-color: #d88; '
+                f'text-decoration-thickness: 2px;">{error}</span>'
+                f' <span style="color:#1f4e79;"><b>→ {suggestion}</b></span>'
+            )
+        else:
+            replacement = (
+                f'<span style="text-decoration: underline; text-decoration-color: #d88; '
+                f'text-decoration-thickness: 2px;">{error}</span>'
+            )
+
+        html = html.replace(error, replacement, 1)
+
+    html = html.replace("\n", "<br>")
+    return html
+
+
 # ---------------------------
 # Generate
 # ---------------------------
@@ -205,6 +269,17 @@ if st.button("Generate Feedback"):
             data = json.loads(raw)
             data = normalize_data(data)
 
+            # ---------------------------
+            # Extra improvements
+            # ---------------------------
+            word_count, word_status, min_words, max_words = word_count_check(answer)
+            estimated_cefr = estimate_cefr(int(data["score"].get("total", 0)))
+
+            data["word_count"] = word_count
+            data["word_count_status"] = word_status
+            data["recommended_range"] = f"{min_words}-{max_words}"
+            data["estimated_cefr"] = estimated_cefr
+
             if task_image_path:
                 data["task_image_path"] = task_image_path
 
@@ -215,6 +290,29 @@ if st.button("Generate Feedback"):
             st.stop()
 
     st.success("Report generated!")
+
+    # ---------------------------
+    # On-screen improvements
+    # ---------------------------
+    st.markdown("## Quick Overview")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### Word Count")
+        st.write(f"**Word count:** {word_count}")
+        st.write(f"**Recommended range:** {min_words}-{max_words} words")
+        st.write(f"**Status:** {word_status}")
+
+    with c2:
+        st.markdown("### Estimated CEFR Level")
+        st.write(f"**{estimated_cefr}**")
+        st.write(f"**Total score:** {data['score'].get('total', 0)} / 20")
+        st.write(f"**Overall band:** {data['score'].get('overall_band', 'B2')}")
+
+    if data.get("corrections"):
+        st.markdown("### Student Text with Inline Corrections")
+        corrected_html = build_inline_corrections_html(answer, data["corrections"])
+        st.markdown(corrected_html, unsafe_allow_html=True)
 
     with open(docx_path, "rb") as f:
         st.download_button(

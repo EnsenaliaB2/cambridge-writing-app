@@ -88,6 +88,18 @@ def _write_inline_underlines(paragraph: Paragraph, full_text: str, corrections: 
         r_err = paragraph.add_run(next_frag)
         _set_run(r_err, SOFT_RED, underline=True)
 
+        match = None
+        for c in corrections or []:
+            if isinstance(c, dict) and (c.get("error_fragment") or "").strip() == next_frag:
+                match = c
+                break
+
+        if match:
+            sug = (match.get("suggestion") or "").strip()
+            if sug:
+                r_arrow = paragraph.add_run(f" → {sug}")
+                _set_run(r_arrow, NAVY, underline=False)
+
         used.add(next_frag)
         idx = next_pos + len(next_frag)
 
@@ -235,6 +247,42 @@ def _fill_bullets_under_heading(doc: Document, heading_text: str, lines: List[st
 
 
 # ----------------------------
+# New overview section
+# ----------------------------
+def _insert_quick_overview(doc: Document, data: Dict[str, Any]):
+    idx_section2 = _find_paragraph_index_contains(doc, "2. Student Answer")
+    if idx_section2 == -1:
+        return
+
+    anchor = doc.paragraphs[idx_section2 - 1] if idx_section2 > 0 else doc.paragraphs[idx_section2]
+
+    p_title = _insert_paragraph_after_paragraph(anchor, "Quick Overview")
+    _set_paragraph_color(p_title, NAVY)
+
+    word_count = data.get("word_count", "")
+    recommended_range = data.get("recommended_range", "140-190")
+    word_count_status = data.get("word_count_status", "")
+    estimated_cefr = data.get("estimated_cefr", "")
+    total_score = data.get("score", {}).get("total", "")
+    overall_band = data.get("score", {}).get("overall_band", "B2")
+
+    lines = [
+        f"Word count: {word_count}",
+        f"Recommended range: {recommended_range} words",
+        f"Status: {word_count_status}",
+        f"Estimated CEFR: {estimated_cefr}",
+        f"Total score: {total_score} / 20",
+        f"Overall band: {overall_band}",
+    ]
+
+    last_para = p_title
+    for line in lines:
+        p = _insert_paragraph_after_paragraph(last_para, line)
+        _set_paragraph_color(p, NAVY)
+        last_para = p
+
+
+# ----------------------------
 # Build report
 # ----------------------------
 def build_report_from_template(
@@ -267,6 +315,9 @@ def build_report_from_template(
         if task_text.strip():
             p_task = _insert_paragraph_after_paragraph(last, task_text)
             _set_paragraph_color(p_task, NAVY)
+
+    # Quick Overview
+    _insert_quick_overview(doc, data)
 
     # 2. Student Answer
     idx_student = _find_paragraph_index_contains(doc, "2. Student Answer")
