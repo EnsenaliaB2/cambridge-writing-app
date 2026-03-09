@@ -1,7 +1,6 @@
 import os
 import json
 import base64
-import tempfile
 import streamlit as st
 from openai import OpenAI
 
@@ -65,11 +64,6 @@ def build_prompt(task_text: str, student_text: str, has_image: bool) -> str:
 
 def clean_json(text: str) -> str:
     return text.strip().replace("```json", "").replace("```", "").strip()
-
-
-def read_bytes(path: str) -> bytes:
-    with open(path, "rb") as f:
-        return f.read()
 
 
 def ensure_list(x):
@@ -184,6 +178,47 @@ def estimate_cefr(score: int) -> str:
         return "Below B1"
 
 
+def detect_task_type(task_text: str) -> str:
+    t = (task_text or "").lower()
+
+    if "article" in t:
+        return "Article"
+    if "email" in t or "e-mail" in t:
+        return "Email"
+    if "review" in t:
+        return "Review"
+    if "report" in t:
+        return "Report"
+    if "essay" in t:
+        return "Essay"
+    if "letter" in t:
+        return "Letter"
+
+    return "Unknown"
+
+
+def structure_check(task_text: str, student_text: str) -> list:
+    warnings = []
+
+    answer_lower = (student_text or "").lower()
+    task_lower = (task_text or "").lower()
+    word_count = len((student_text or "").split())
+
+    if word_count < 120:
+        warnings.append("Text may be too short for a full B2 response.")
+
+    if "article" in task_lower and "in conclusion" not in answer_lower and "to sum up" not in answer_lower:
+        warnings.append("No clear conclusion detected.")
+
+    if "email" in task_lower and "dear" not in answer_lower and "hello" not in answer_lower:
+        warnings.append("No clear email opening detected.")
+
+    if ("email" in task_lower or "letter" in task_lower) and "kind regards" not in answer_lower and "best regards" not in answer_lower:
+        warnings.append("No clear closing formula detected.")
+
+    return warnings
+
+
 def build_inline_corrections_html(text: str, corrections: list) -> str:
     if not text:
         return ""
@@ -238,7 +273,6 @@ if st.button("Generate Feedback"):
             task_image_path = ""
             if task_image:
                 task_image_path = save_task_image(task_image)
-
                 data_url = image_to_data_url(task_image)
 
                 messages = [
@@ -269,16 +303,18 @@ if st.button("Generate Feedback"):
             data = json.loads(raw)
             data = normalize_data(data)
 
-            # ---------------------------
             # Extra improvements
-            # ---------------------------
             word_count, word_status, min_words, max_words = word_count_check(answer)
             estimated_cefr = estimate_cefr(int(data["score"].get("total", 0)))
+            detected_task_type = detect_task_type(task)
+            structure_warnings = structure_check(task, answer)
 
             data["word_count"] = word_count
             data["word_count_status"] = word_status
             data["recommended_range"] = f"{min_words}-{max_words}"
             data["estimated_cefr"] = estimated_cefr
+            data["detected_task_type"] = detected_task_type
+            data["structure_warnings"] = structure_warnings
 
             if task_image_path:
                 data["task_image_path"] = task_image_path
@@ -295,6 +331,7 @@ if st.button("Generate Feedback"):
     # On-screen improvements
     # ---------------------------
     st.markdown("## Quick Overview")
+    st.write(f"**Task type detected:** {data.get('detected_task_type', 'Unknown')}")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -308,6 +345,11 @@ if st.button("Generate Feedback"):
         st.write(f"**{estimated_cefr}**")
         st.write(f"**Total score:** {data['score'].get('total', 0)} / 20")
         st.write(f"**Overall band:** {data['score'].get('overall_band', 'B2')}")
+
+    if data.get("structure_warnings"):
+        st.markdown("### Structure Notes")
+        for warning in data["structure_warnings"]:
+            st.warning(warning)
 
     if data.get("corrections"):
         st.markdown("### Student Text with Inline Corrections")

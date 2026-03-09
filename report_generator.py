@@ -48,9 +48,6 @@ def _insert_paragraph_after_index(doc: Document, paragraph_index: int, text: str
     return _insert_paragraph_after_paragraph(doc.paragraphs[paragraph_index], text)
 
 
-# ----------------------------
-# Student answer underline
-# ----------------------------
 def _write_inline_underlines(paragraph: Paragraph, full_text: str, corrections: List[Dict[str, Any]]):
     _clear_paragraph(paragraph)
 
@@ -130,9 +127,6 @@ def _write_suggested_corrections_after_paragraph(anchor_para: Paragraph, correct
             _set_run(r2, NAVY)
 
 
-# ----------------------------
-# Score table
-# ----------------------------
 def _fill_score_table(doc: Document, score: Dict[str, Any]):
     target = None
     for t in doc.tables:
@@ -177,9 +171,6 @@ def _fill_score_table(doc: Document, score: Dict[str, Any]):
             _set_paragraph_color(doc.paragraphs[idx_band + 1], NAVY)
 
 
-# ----------------------------
-# Detailed section 3 feedback
-# ----------------------------
 def _insert_section3_feedback(doc: Document, data: Dict[str, Any]):
     idx_section3 = _find_paragraph_index_contains(doc, "3. Feedback and Score")
     if idx_section3 == -1:
@@ -228,9 +219,6 @@ def _insert_section3_feedback(doc: Document, data: Dict[str, Any]):
                 last_para = p_ev
 
 
-# ----------------------------
-# Bullets
-# ----------------------------
 def _fill_bullets_under_heading(doc: Document, heading_text: str, lines: List[str], max_lines: int = 10):
     idx = _find_paragraph_index_contains(doc, heading_text)
     if idx == -1:
@@ -246,9 +234,6 @@ def _fill_bullets_under_heading(doc: Document, heading_text: str, lines: List[st
         last_para = p
 
 
-# ----------------------------
-# New overview section
-# ----------------------------
 def _insert_quick_overview(doc: Document, data: Dict[str, Any]):
     idx_section2 = _find_paragraph_index_contains(doc, "2. Student Answer")
     if idx_section2 == -1:
@@ -265,8 +250,10 @@ def _insert_quick_overview(doc: Document, data: Dict[str, Any]):
     estimated_cefr = data.get("estimated_cefr", "")
     total_score = data.get("score", {}).get("total", "")
     overall_band = data.get("score", {}).get("overall_band", "B2")
+    task_type = data.get("detected_task_type", "Unknown")
 
     lines = [
+        f"Task type detected: {task_type}",
         f"Word count: {word_count}",
         f"Recommended range: {recommended_range} words",
         f"Status: {word_count_status}",
@@ -281,10 +268,18 @@ def _insert_quick_overview(doc: Document, data: Dict[str, Any]):
         _set_paragraph_color(p, NAVY)
         last_para = p
 
+    warnings = data.get("structure_warnings", []) or []
+    if warnings:
+        p_warn_title = _insert_paragraph_after_paragraph(last_para, "Structure notes")
+        _set_paragraph_color(p_warn_title, NAVY)
+        last_para = p_warn_title
 
-# ----------------------------
-# Build report
-# ----------------------------
+        for warning in warnings:
+            p_warn = _insert_paragraph_after_paragraph(last_para, f"• {warning}")
+            _set_paragraph_color(p_warn, NAVY)
+            last_para = p_warn
+
+
 def build_report_from_template(
     template_path: str,
     output_docx: str,
@@ -294,7 +289,6 @@ def build_report_from_template(
 ):
     doc = Document(template_path)
 
-    # 1. Task (image + extracted text)
     idx_task = _find_paragraph_index_contains(doc, "1. Task")
     if idx_task != -1:
         task_image_path = (data.get("task_image_path") or "").strip()
@@ -316,21 +310,17 @@ def build_report_from_template(
             p_task = _insert_paragraph_after_paragraph(last, task_text)
             _set_paragraph_color(p_task, NAVY)
 
-    # Quick Overview
     _insert_quick_overview(doc, data)
 
-    # 2. Student Answer
     idx_student = _find_paragraph_index_contains(doc, "2. Student Answer")
     if idx_student != -1:
         p_ans = _insert_paragraph_after_index(doc, idx_student, "")
         _write_inline_underlines(p_ans, student_answer, data.get("corrections", []))
         _write_suggested_corrections_after_paragraph(p_ans, data.get("corrections", []))
 
-    # 3. Feedback and Score
     _insert_section3_feedback(doc, data)
     _fill_score_table(doc, data.get("score", {}))
 
-    # 4/5/6
     strengths = []
     s = data.get("strengths", {}) or {}
     for k in ["content", "communicative_achievement", "organisation", "language"]:
@@ -347,7 +337,6 @@ def build_report_from_template(
     _fill_bullets_under_heading(doc, "5. Weaknesses", weaknesses)
     _fill_bullets_under_heading(doc, "6. Improvement Summary", improvements)
 
-    # 7. Model Answer
     idx_model = _find_paragraph_index_contains(doc, "7. Model Answer")
     if idx_model != -1:
         p_model = _insert_paragraph_after_index(doc, idx_model, data.get("model_answer", "") or "")
