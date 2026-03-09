@@ -279,6 +279,20 @@ def _insert_quick_overview(doc: Document, data: Dict[str, Any]):
             _set_paragraph_color(p_warn, NAVY)
             last_para = p_warn
 
+    task_points = data.get("task_points", []) or []
+    if task_points:
+        p_cov_title = _insert_paragraph_after_paragraph(last_para, "Task coverage")
+        _set_paragraph_color(p_cov_title, NAVY)
+        last_para = p_cov_title
+
+        for item in task_points:
+            point = item.get("point", "")
+            covered = item.get("covered", False)
+            prefix = "✔ Covered:" if covered else "⚠ Possibly missing:"
+            p_cov = _insert_paragraph_after_paragraph(last_para, f"{prefix} {point}")
+            _set_paragraph_color(p_cov, NAVY)
+            last_para = p_cov
+
 
 def build_report_from_template(
     template_path: str,

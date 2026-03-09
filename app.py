@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import re
 import streamlit as st
 from openai import OpenAI
 
@@ -219,6 +220,52 @@ def structure_check(task_text: str, student_text: str) -> list:
     return warnings
 
 
+def extract_task_points(task_text: str) -> list:
+    lines = (task_text or "").splitlines()
+    points = []
+
+    for line in lines:
+        clean = line.strip()
+        if not clean:
+            continue
+
+        if clean.startswith("•") or clean.startswith("-") or clean.startswith("*"):
+            points.append(clean[1:].strip())
+            continue
+
+        if re.match(r"^\d+[\.\)]\s+", clean):
+            clean = re.sub(r"^\d+[\.\)]\s+", "", clean).strip()
+            points.append(clean)
+            continue
+
+    return points[:5]
+
+
+def keyword_overlap(point: str, student_text: str) -> bool:
+    point_words = re.findall(r"\b[a-zA-Z]{4,}\b", point.lower())
+    answer_words = set(re.findall(r"\b[a-zA-Z]{4,}\b", (student_text or "").lower()))
+
+    if not point_words:
+        return False
+
+    matches = sum(1 for w in point_words if w in answer_words)
+    return matches >= 1
+
+
+def evaluate_task_points(task_text: str, student_text: str) -> list:
+    points = extract_task_points(task_text)
+    results = []
+
+    for point in points:
+        covered = keyword_overlap(point, student_text)
+        results.append({
+            "point": point,
+            "covered": covered
+        })
+
+    return results
+
+
 def build_inline_corrections_html(text: str, corrections: list) -> str:
     if not text:
         return ""
@@ -303,11 +350,11 @@ if st.button("Generate Feedback"):
             data = json.loads(raw)
             data = normalize_data(data)
 
-            # Extra improvements
             word_count, word_status, min_words, max_words = word_count_check(answer)
             estimated_cefr = estimate_cefr(int(data["score"].get("total", 0)))
             detected_task_type = detect_task_type(task)
             structure_warnings = structure_check(task, answer)
+            task_points = evaluate_task_points(task, answer)
 
             data["word_count"] = word_count
             data["word_count_status"] = word_status
@@ -315,6 +362,7 @@ if st.button("Generate Feedback"):
             data["estimated_cefr"] = estimated_cefr
             data["detected_task_type"] = detected_task_type
             data["structure_warnings"] = structure_warnings
+            data["task_points"] = task_points
 
             if task_image_path:
                 data["task_image_path"] = task_image_path
@@ -327,9 +375,6 @@ if st.button("Generate Feedback"):
 
     st.success("Report generated!")
 
-    # ---------------------------
-    # On-screen improvements
-    # ---------------------------
     st.markdown("## Quick Overview")
     st.write(f"**Task type detected:** {data.get('detected_task_type', 'Unknown')}")
 
@@ -350,6 +395,14 @@ if st.button("Generate Feedback"):
         st.markdown("### Structure Notes")
         for warning in data["structure_warnings"]:
             st.warning(warning)
+
+    if data.get("task_points"):
+        st.markdown("### Task Coverage")
+        for item in data["task_points"]:
+            if item["covered"]:
+                st.success(f"Covered: {item['point']}")
+            else:
+                st.warning(f"Possibly missing: {item['point']}")
 
     if data.get("corrections"):
         st.markdown("### Student Text with Inline Corrections")
